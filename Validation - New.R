@@ -52,7 +52,7 @@ orig.val.dat$diag.year <- as.numeric(format(as.POSIXct(orig.val.dat$diagnose_dat
 orig.val.dat$Age <- as.numeric(floor((as.POSIXct(orig.val.dat$SNdate, form="%Y-%m-%d") -
                                         as.POSIXct(orig.val.dat$DOB, form="%Y-%m-%d"))/(24*60*60)/365.25))
 
-# Rec.composite
+# Rec.composite, dead, MSM, and merge Histology categories that are small
 orig.val.dat <- orig.val.dat %>%
   mutate(Rec.composite = case_when(Recurrence=="Yes" |
                                      Status=="Alive with disease" |
@@ -61,31 +61,22 @@ orig.val.dat <- orig.val.dat %>%
                                      Status=="Deceased with unknown disease status" |
                                      Cause_of_death=="Melanoma" |
                                      Cause_of_death=="Other case (not melanoma)" ~ 1,
-                                   TRUE ~ 0))
-table(orig.val.dat$Rec.composite)
-outcome.df %>% filter(CO==0) %>% summarise(sum(N))
-
-# death indicator
-orig.val.dat <- orig.val.dat %>%
-  mutate(dead = case_when(Status=="Deceased with disease" |
+                                   TRUE ~ 0),
+         dead = case_when(Status=="Deceased with disease" |
                             Status=="Deceased without disease" |
                             Status=="Deceased with unknown disease status" |
                             Cause_of_death=="Melanoma" |
                             Cause_of_death=="Other case (not melanoma)" ~ 1,
-                          TRUE ~ 0))
-
-# MSM
-orig.val.dat$MSM <- as.numeric(orig.val.dat$Cause_of_death=="Melanoma")
-
-# merge small classes of Histology
-orig.val.dat <- orig.val.dat %>%
-  mutate(Histology = case_when(
-    Histology=="Melanoma of childhood" |
-      Histology=="Persistent melanoma" |
-      Histology=="Melanoma arising from blue" |
-      Histology=="Melanoma arising in giant" |
-      Histology=="Neurotropic" ~ "Other (please specify)",
-    TRUE ~ Histology))
+                          TRUE ~ 0),
+         MSM = case_when(Cause_of_death=="Melanoma" ~ 1, 
+                         TRUE ~ 0),
+         Histology = case_when(
+           Histology=="Melanoma of childhood" |
+             Histology=="Persistent melanoma" |
+             Histology=="Melanoma arising from blue" |
+             Histology=="Melanoma arising in giant" |
+             Histology=="Neurotropic" ~ "Other (please specify)",
+           TRUE ~ Histology))
 
 # difference diagnose date and SN date
 orig.val.dat$diag_SN_wk <- as.numeric((as.POSIXct(orig.val.dat$SNdate, form="%Y-%m-%d") -
@@ -98,16 +89,16 @@ orig.val.dat$FU.time <- as.numeric((as.POSIXct(orig.val.dat$Last_FU, form="%Y-%m
                                       as.POSIXct(orig.val.dat$SNdate, form="%Y-%m-%d"))/(24*60*60)/365.25)
 orig.val.dat$logRecurrence.time <- log(orig.val.dat$Recurrence.time)
 orig.val.dat$logFU.time <- log(orig.val.dat$FU.time)
+
+# add time until composite outcome and country
 orig.val.dat <- orig.val.dat %>% mutate(
   logRec.composite.time = case_when(Recurrence=="Yes" ~ logRecurrence.time,
-                                    TRUE ~ logFU.time))
-# country definition
-orig.val.dat <- orig.val.dat %>% mutate(
+                                    TRUE ~ logFU.time),
   Country = case_when(Site=="Brown U/RI Hospital/LifeSpan Oncology" ~ "USA",
                       Site=="California Pacific Med Ctr/UCSF" ~ "USA",
                       Site=="Carolinas Medical Center" ~ "USA",
                       Site=="City of Hope" ~ "USA",
-                      Site=="Istituto Nazionale Tumori" ~ "Italy", # Italy
+                      Site=="Istituto Nazionale Tumori" ~ "Italy", 
                       Site=="Loma Linda University" ~ "USA",
                       Site=="Moffitt Cancer Center" ~ "USA",
                       Site=="Oregon Health & Science University" ~ "USA",
@@ -116,20 +107,23 @@ orig.val.dat <- orig.val.dat %>% mutate(
                       Site=="Southern Arizona VA/University of Arizona" ~ "USA",
                       Site=="St. Joseph Hospital" ~ "USA",
                       Site=="Tel Aviv Sourasky Medical Center" ~ "Israel",
-                      Site=="University Medical Center Groningen" ~ "Netherlands", # Netherlands
+                      Site=="University Medical Center Groningen" ~ "Netherlands",
                       Site=="University of Miami/Sylvester CCC (Jackson Memorial Hospital)" ~ "USA",
                       Site=="University of South Alabama" ~ "USA",
                       Site=="Ventura County Medical Center" ~ "USA",
-                      TRUE ~ "Unknown")) # Unknown
-table(orig.val.dat$Country)
+                      startsWith(as.character(DatabaseNR), "MCA") ~ "USA", # those who have unknown country have ID starting with MCA which stands for Mayo Clinic Arizona
+                      TRUE ~ "Unknown"))
 
 ###
 ### EXCLUSION
 ###
-incl.disease <- orig.val.dat %>%
+melanoma <- orig.val.dat %>%
+  filter(Other_cancer_yn!="Yes")
+cat("Number of patients with other cancer:",
+    sum(orig.val.dat$Other_cancer_yn=="Yes"), "\n")
+incl.disease <- melanoma %>%
   filter(Microsatellitosis!="Yes" &
            Intra_lymphatic_metastasis!="Yes" &
-           Other_cancer_yn!="Yes" &
            n_staging!="N1b" &
            n_staging!="N1c" &
            n_staging!="N2b" &
@@ -137,38 +131,32 @@ incl.disease <- orig.val.dat %>%
            n_staging!="N3b" &
            n_staging!="N3c" &
            m_staging=="M0" &
-           orig.val.dat$diag.year>=1991 &
-           orig.val.dat$diag.year<=2018) # immunotherapy is excluded, so we can include these people, KM doesn't change much too
-cat(" Number of patients with microsatellitosis:",
-    sum(orig.val.dat$Microsatellitosis=="Yes"), "\n",
-    "Number of patients with intra lymphatic metastasis:",
-    sum(orig.val.dat$Intra_lymphatic_metastasis=="Yes"), "\n",
-    "Number of patients with other cancer:",
-    sum(orig.val.dat$Other_cancer_yn=="Yes"), "\n",
-    "Number of patients with N-stage N1b:",
-    sum(orig.val.dat$n_staging=="N1b"), "\n",
-    "Number of patients with N-stage N1c:",
-    sum(orig.val.dat$n_staging=="N1c"), "\n",
-    "Number of patients with N-stage N2b:",
-    sum(orig.val.dat$n_staging=="N2b"), "\n",
-    "Number of patients with N-stage N2c:",
-    sum(orig.val.dat$n_staging=="N2c"), "\n",
-    "Number of patients with N-stage N3b:",
-    sum(orig.val.dat$n_staging=="N3b"), "\n",
-    "Number of patients with N-stage N3c:",
-    sum(orig.val.dat$n_staging=="N3c"), "\n",
-    "Number of patients with M-stage M1:",
-    sum(orig.val.dat$m_staging=="M1"), "\n",
-    "Number of patients with M-stage M1a:",
-    sum(orig.val.dat$m_staging=="M1a"), "\n",
-    "Number of patients with M-stage M1b:",
-    sum(orig.val.dat$m_staging=="M1b"), "\n",
-    "Number of patients with unknown M-stage:",
-    sum(orig.val.dat$m_staging=="Mx" | orig.val.dat$m_staging=="6" | orig.val.dat$m_staging=="7"), "\n",
-    "Number of patients diagnosed before 1991:",
-    sum(orig.val.dat$diag.year<1991, na.rm=TRUE), "\n",
+           melanoma$diag.year>=1991 &
+           melanoma$diag.year<=2018) # immunotherapy is excluded, so we can include these people, KM doesn't change much too
+cat("Number of patients diagnosed before 1991:",
+    sum(melanoma$diag.year<1991, na.rm=TRUE), "\n",
     "Number of patients diagnosed after 2018:",
-    sum(orig.val.dat$diag.year>2018, na.rm=TRUE), "\n")
+    sum(melanoma$diag.year>2018, na.rm=TRUE), "\n",
+    "Number of patients with microsatellitosis:",
+    sum(melanoma$Microsatellitosis=="Yes"), "\n",
+    "Number of patients with intra lymphatic metastasis:",
+    sum(melanoma$Intra_lymphatic_metastasis=="Yes"), "\n",
+    "Number of patients with N-stage N1b:",
+    sum(melanoma$n_staging=="N1b"), "\n",
+    "Number of patients with N-stage N2b:",
+    sum(melanoma$n_staging=="N2b"), "\n",
+    "Number of patients with N-stage N2c:",
+    sum(melanoma$n_staging=="N2c"), "\n",
+    "Number of patients with N-stage N3b:",
+    sum(melanoma$n_staging=="N3b"), "\n",
+    "Number of patients with N-stage N3c:",
+    sum(melanoma$n_staging=="N3c"), "\n",
+    "Number of patients with M-stage M:",
+    sum(melanoma$m_staging=="M1")+
+      sum(melanoma$m_staging=="M1a")+
+      sum(melanoma$m_staging=="M1b"), "\n",
+    "Number of patients with unknown M-stage:",
+    sum(melanoma$m_staging=="Mx" | melanoma$m_staging=="6" | melanoma$m_staging=="7"), "\n")
 incl.treat <- incl.disease %>%
   filter(neoadj!="Yes" &
            Radiation_therapy!="Yes" &
@@ -179,16 +167,15 @@ incl.treat <- incl.disease %>%
            Target_therapy_date=="" &
            Immuno_therapy!="Yes" &
            Immuno_therapy_date=="")
-cat("Number of patients with neo adjuvant therapy:",
-    sum(incl.disease$neoadj=="Yes"), "\n",
+cat("Number of patients with neo adjuvant therapyor immunotherapy:",
+    sum(incl.disease$Immuno_therapy=="Yes" | incl.disease$Immuno_therapy_date!="") +
+      sum(incl.disease$neoadj=="Yes"), "\n",
     "Number of patients with radiation therapy:",
     sum(incl.disease$Radiation_therapy=="Yes" | incl.disease$Radiation_therapy_date!=""), "\n",
     "Number of patients with chemotherapy:",
     sum(incl.disease$Chemo_therapy=="Yes" | incl.disease$Chemo_therapy_date!=""), "\n",
     "Number of patients with targeted therapy:",
-    sum(incl.disease$Target_therapy=="Yes" | incl.disease$Target_therapy_date!=""), "\n",
-    "Number of patients with immunotherapy:",
-    sum(incl.disease$Immuno_therapy=="Yes" | incl.disease$Immuno_therapy_date!=""), "\n")
+    sum(incl.disease$Target_therapy=="Yes" | incl.disease$Target_therapy_date!=""), "\n")
 sel.val.dat <- incl.treat %>%
   filter(SNdate!="" &
            Last_FU!="" &
@@ -202,28 +189,26 @@ sel.val.dat <- incl.treat %>%
            diag_SN_wk>-14 &
            DOB!="" &
            Age > 0)
-cat(" Number of patients with unknown SN date:",
-    sum(incl.treat$SNdate==""), "\n",
-    "Number of patients with unknown last follow-up date:",
-    sum(incl.treat$Last_FU==""), "\n",
+cat(" Number of patients with unknown SN date and unknown last follow-up date:",
+    sum(incl.treat$SNdate=="")+
+      sum(incl.treat$Last_FU==""), "\n",
     "Number of patients with unknown Recurrence, COD and Status:",
     sum((incl.treat$Recurrence=="" & incl.treat$Cause_of_death=="" & incl.treat$Status=="") |
           (incl.treat$Recurrence=="" & incl.treat$Cause_of_death=="" & incl.treat$Status=="Lost to follow-up") |
           (incl.treat$Recurrence=="" & incl.treat$Cause_of_death=="Unknown" & incl.treat$Status=="") |
           (incl.treat$Recurrence=="" & incl.treat$Cause_of_death=="Unknown" & incl.treat$Status=="Lost to follow-up")), "\n",
-    "Number of patients with date of follow-up before or on the same day as SN date:",
-    sum(incl.treat$FU.time<=0, na.rm=TRUE), "\n",
-    "Number of patients with unknown date of recurrence:",
-    sum(incl.treat$Recurrence=="Yes" & incl.treat$Date_1st_Rec=="", na.rm=TRUE), "\n",
-    "Number of patients with date of recurrence before or on the same day as SN date:",
-    sum(incl.treat$Recurrence=="Yes" & incl.treat$Recurrence.time<=0, na.rm=TRUE), "\n",
+    "Number of patients with date of follow-up before or on the same day as SN date, \n unknown date of recurrence, date of recurrence before or on the same day as SN date:",
+    sum(incl.treat$FU.time<=0, na.rm=TRUE)+
+      sum(incl.treat$Recurrence=="Yes" & incl.treat$Date_1st_Rec=="", na.rm=TRUE)+
+      sum(incl.treat$Recurrence=="Yes" & incl.treat$Recurrence.time<=0, na.rm=TRUE), "\n",
     "Number of patients with diagnose date 14 weeks before SN date:",
     sum(incl.treat$diag_SN_wk<-14), "\n",
-    "Number of patients with unknown DOB:",
-    sum(incl.treat$DOB==""), "\n",
     "Number of patients with SN date before DOB or at same date:",
-    sum(incl.treat$Age<=0, na.rm=TRUE), "\n")
+    sum(incl.treat$Age<=0, na.rm=TRUE), "\n",
+    "Number of patients with unknown DOB:",
+    sum(incl.treat$DOB==""), "\n")
 cat(" Number of patients in original data set:", nrow(orig.val.dat), "\n",
+    "Number of patients after excluding other cancers:", nrow(melanoma), "\n",
     "Number of patients after excluding other diseases:", nrow(incl.disease), "\n",
     "Number of patients after excluding other treatments:", nrow(incl.treat), "\n",
     "Number of patients after excluding registration issues:", nrow(sel.val.dat), "\n")
@@ -269,7 +254,6 @@ openxlsx::write.xlsx(data.frame(country=c("All", unique(df.med.FU$Country)),
                                      result.med.FU)),
                      file="Z:/Project Melanoom/PaperValidation/Results/med.FU.xlsx")
 
-
 # limit to 5 years
 horizon <- 5
 S.Rec.5 <- S.Rec
@@ -292,7 +276,7 @@ est.CI.n <- function(KM=NULL, horizon=5){
 # sample sizes
 KM.est <- c()
 country.names <- c("USA", "Sweden", "Israel")
-for (population in c("Total", country.names, "Unknown")){
+for (population in c("Total", country.names)){
   KM.est <- rbind(KM.est, c(population, rep("", 4)))
   for (patients in c("all", "pos", "neg")){
     if (patients=="pos" & population=="Total"){
@@ -330,7 +314,6 @@ for (population in c("Total", country.names, "Unknown")){
     KM.est <- rbind(KM.est, row)
   }
 }
-KM.est
 openxlsx::write.xlsx(data.frame(KM.est),
                      file="Z:/Project Melanoom/PaperValidation/Results/KM.est.xlsx")
 
@@ -370,9 +353,9 @@ to.be.imp.data <- sel.val.dat %>% select(SNstatus, Sex, Ulceration, Loc_CAT, Age
                                          Histology, Breslow, Rdamcrit, Dewar, Mitosis,
                                          Rec.composite, logRec.composite.time,
                                          MSM, logFU.time, Country)
-# doesn't exist: multiple.fields, Tot_SNs_neg, Tot_SNs_pos
+# not in data: multiple.fields, Tot_SNs_neg, Tot_SNs_pos
 
-# properly code missingness
+# code missingness
 to.be.imp.data <- to.be.imp.data %>%
   mutate(SNstatus = case_when(SNstatus=="" | SNstatus=="Unknown" ~ NA,
                               TRUE ~ SNstatus),
@@ -404,9 +387,7 @@ to.be.imp.data <- to.be.imp.data %>%
                            (Dewar=="" | Dewar=="Unknown") & SNstatus=="Negative" ~ NA,
                            TRUE ~ Dewar),
          Mitosis = case_when(Mitosis=="" | Mitosis=="Unknown" ~ NA,
-                             TRUE ~ Mitosis),
-         Country = case_when(Country=="Unknown" ~ "USA", # those who have unknown country have ID starting with MCA which stands for Mayo Clinic Arizona
-                             TRUE ~ Country))
+                             TRUE ~ Mitosis))
 
 # drop levels
 to.be.imp.data <- droplevels(to.be.imp.data)
@@ -483,9 +464,37 @@ for (i in 1:m){
   pred.MSM <- cbind(pred.MSM, 1-pred$p.MSS)
 }
 
+# calculate AJCC8 
+cindex <- c()
+cindex.se <- c()
+for (i in 1:m){
+  AJCC.i <- data.frame(Breslow=mice::complete(mice.data, i)$Breslow,
+                       Ulceration=mice::complete(mice.data, i)$Ulceration) |>
+    mutate(AJCC8 = case_when(
+      Breslow<=0.8 & Ulceration=="No" ~ 1.1,
+      Breslow<=0.8 & Ulceration=="Yes" ~ 1.2,
+      Breslow>0.8 & Breslow<=1 ~ 1.2,
+      Breslow>1 & Breslow<=2 & Ulceration=="No" ~ 2.1,
+      Breslow>1 & Breslow<=2 & Ulceration=="Yes" ~ 2.2,
+      Breslow>2 & Breslow<=4 & Ulceration=="No" ~ 3.1,
+      Breslow>2 & Breslow<=4 & Ulceration=="Yes" ~ 3.2,
+      Breslow>4 & Ulceration=="No" ~ 4.1,
+      Breslow>4 & Ulceration=="Yes" ~ 4.2,
+    ))
+  
+  # C-index of AJCC8
+  rc <- Hmisc::rcorr.cens(-AJCC.i$AJCC8, S.Rec.5)
+  cindex <- c(cindex, rc["C Index"])
+  cindex.se <- c(cindex.se, rc["S.D."]/2)
+}
+cindex.mi<-Rubin.combine(cindex, cindex.se)
+cat("C-index AJCC8:", round(cindex.mi$est, 2),
+    "95% CI:", round(cindex.mi$est-1.96*cindex.mi$se, 2),
+    "-", round(cindex.mi$est+1.96*cindex.mi$se, 2), "\n")
+
 # save calibration figures
 for (site in c("Total", country.names)){
-  for (status in c("All", "Positive", "Negative")){
+  for (status in c("All", "Positive", "Negative")[1]){
     if (site=="Total" & status=="All"){
       sel.patients <- rep(TRUE, nrow(to.be.imp.data))
     } else if (site=="Total" & status!="All"){
@@ -500,8 +509,9 @@ for (site in c("Total", country.names)){
                     "cal.RFS.", site, ".", status, ".png"),
         width=16, height=16, units="cm", res=300)
     PredictionTools::val.surv.mi(p=pred.Rec[sel.patients, ],
-                                 y=S.Rec.5[sel.patients, ], time=horizon,
-                                 show.metrics=c(rep(TRUE, 5), FALSE), # TODO
+                                 y=S.Rec.5[sel.patients, ], 
+                                 time=horizon,
+                                 show.metrics=c(rep(TRUE, 5), TRUE),
                                  main=ifelse(site=="Total" & status=="All", "All patients",
                                              ifelse(site=="Total" & status=="Positive", "Patients with positive SN",
                                                     ifelse(site=="Total" & status=="Negative", "Patients with negative SN", site))),
@@ -511,8 +521,9 @@ for (site in c("Total", country.names)){
                     site, ".", status, ".png"),
         width=16, height=16, units="cm", res=300)
     PredictionTools::val.surv.mi(p=pred.MSM[sel.patients, ],
-                                 y=S.MSM.5[sel.patients, ], time=horizon,
-                                 show.metrics=c(rep(TRUE, 5), FALSE), # TODO
+                                 y=S.MSM.5[sel.patients, ], 
+                                 time=horizon,
+                                 show.metrics=c(rep(TRUE, 5), TRUE), 
                                  main=ifelse(site=="Total" & status=="All", "All patients",
                                              ifelse(site=="Total" & status=="Positive", "Patients with positive SN",
                                                     ifelse(site=="Total" & status=="Negative", "Patients with negative SN", site))),
@@ -570,42 +581,52 @@ for (site in c("Total", country.names)){
 ###
 ### Manual calculation of DCA
 ###
-dca.plot.RFS <- dcurves::dca(y ~ Model,
-                         time=horizon,
-                         data=data.frame(y=S.Rec.5,
-                                         Model=rowMeans(pred.Rec))) %>%
+dca.out <- dcurves::dca(y ~ Model,
+                        time=horizon,
+                        data=data.frame(y=S.Rec,
+                                        Model=rowMeans(pred.Rec))) %>%
   plot(smooth = TRUE)
-t <- 0.45
-dca.plot.RFS$data |> filter(threshold==t)
-
-# true/false positives/negatives
-N <- nrow(S.Rec.5)
-TP <- sum(rowMeans(pred.Rec)>t & S.Rec[,2]==1 & S.Rec[,1] <= horizon)
-FP <- sum(rowMeans(pred.Rec)>t & S.Rec[,2]==0 & S.Rec[,1] <= horizon)
-TN <- sum(rowMeans(pred.Rec)<=t & S.Rec[,2]==0 & S.Rec[,1] <= horizon)
-FN <- sum(rowMeans(pred.Rec)<=t & S.Rec[,2]==1 & S.Rec[,1] <= horizon)
-
-ggsurvplot(survfit(S.Rec ~ 1, data=S.Rec), risk.table=TRUE)
-N-sum(TP+FP+TN+FN)
-
-PR <- TP/(TP+FP)
-TPR <- TP/(TP+FN)
-FPR <- FP/(FP+TN)
-NB <- TP/N - (FP/N)*(t/(1-t))
-cat("Threshold:", t, "\n", 
-    "True positives:", TP, "\n",
-    "False positives:", FP, "\n",
-    "True negatives:", TN, "\n",
-    "False negatives:", FN, "\n",
-    "Positive rate:", PR, "\n",
-    "True positive rate:", TPR, "\n",
-    "False positive rate:", FPR, "\n",
-    "Net benefit", NB, "\n")
+NB.table <- c()
+for (t in c(0.44, 0.45, 0.5, 0.55, 0.6)){
+  # deduct TP, FP, TN, FN from output
+  POS_rate <- as.numeric(dca.out$data |> filter(threshold==t & variable=="Model") |> select(pos_rate))
+  TP_rate <- as.numeric(dca.out$data |> filter(threshold==t & variable=="Model") |> select(tp_rate))
+  FP_rate <- as.numeric(dca.out$data |> filter(threshold==t & variable=="Model") |> select(fp_rate))
+  N <- nrow(S.Rec.5)
+  TP <- TP_rate*N
+  FP <- FP_rate*N
+  TN <- (POS_rate-TP_rate)*N
+  FN <- N*(1-(FP_rate+POS_rate))
+  
+  # calculate metrics
+  sensitivity <- sprintf("%.1f", TP/(TP+FN)*100)
+  specificity <- sprintf("%.1f", TN/(TN+FP)*100)
+  PPV <- sprintf("%.1f", TP/(TP+FP)*100)
+  NPV <- sprintf("%.1f", TN/(TN+FN)*100)
+  NB_model <- sprintf("%.2f", as.numeric(dca.out$data |> filter(threshold==t & variable=="Model") |> select(net_benefit)))
+  NB_all <- sprintf("%.2f", as.numeric(dca.out$data |> filter(threshold==t & variable=="all") |> select(net_benefit)))
+  NB_none <- sprintf("%.2f", as.numeric(dca.out$data |> filter(threshold==t & variable=="none") |> select(net_benefit)))
+  
+  # save
+  NB.table <- rbind(NB.table, 
+                    c(t*100, sensitivity, specificity, 
+                      sprintf("%.0f", TP), sprintf("%.0f", FP), 
+                      sprintf("%.0f", TN), sprintf("%.0f", FN), 
+                      PPV, NPV, 
+                      NB_model, NB_all, NB_none))
+}
+NB.table <- data.frame(NB.table)
+colnames(NB.table) <- c("Probability threshold (%)", 
+                        "Sensitivity (%)", "Specificity (%)", "TP", "FP", "TN", "FN", 
+                        "PPV (%)", "NPV (%)", "Net benefit of the model", 
+                        "Net benefit treat all", "Net benefit treat none")
+openxlsx::write.xlsx(NB.table,
+                     file="Z:/Project Melanoom/PaperValidation/Results/NB.table.xlsx")
 
 ###
 ### Combine calibration plots for countries
 ###
-for (status in c("All", "Positive", "Negative")){
+for (status in c("All", "Positive", "Negative")[1]){
   for (outcome in c("RFS", "MSS")){
     png(file=paste0("Z:/Project Melanoom/PaperValidation/Results/",
                     ifelse(status!="All", "Calibration plots/", ""),
@@ -624,11 +645,11 @@ for (status in c("All", "Positive", "Negative")){
   }
 }
 
-##
+###
 ### Combine all, positive, and negative SN calibration plots
 ###
 for (outcome in c("RFS", "MSS")){
-  for (patients in c("All", "Positive", "Negative")){
+  for (patients in c("All", "Positive", "Negative")[1]){
     img <- png::readPNG(paste0("Z:/Project Melanoom/PaperValidation/Results/Calibration plots/cal.",
                                outcome, ".Total.", patients, ".png"))
     img_grob <- grid::rasterGrob(img, interpolate=TRUE)
