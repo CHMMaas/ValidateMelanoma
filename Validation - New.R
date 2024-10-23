@@ -119,10 +119,10 @@ orig.val.dat <- orig.val.dat %>% mutate(
 ###
 melanoma <- orig.val.dat %>%
   filter(Other_cancer_yn!="Yes")
-cat("Number of patients with other cancer:",
-    sum(orig.val.dat$Other_cancer_yn=="Yes"), "\n")
 incl.disease <- melanoma %>%
-  filter(Microsatellitosis!="Yes" &
+  filter(melanoma$diag.year>=1991 & # immunotherapy is excluded, so we can include these people, KM doesn't change much too
+           melanoma$diag.year<=2018 &
+           Microsatellitosis!="Yes" &
            Intra_lymphatic_metastasis!="Yes" &
            n_staging!="N1b" &
            n_staging!="N1c" &
@@ -130,52 +130,17 @@ incl.disease <- melanoma %>%
            n_staging!="N2c" &
            n_staging!="N3b" &
            n_staging!="N3c" &
-           m_staging=="M0" &
-           melanoma$diag.year>=1991 &
-           melanoma$diag.year<=2018) # immunotherapy is excluded, so we can include these people, KM doesn't change much too
-cat("Number of patients diagnosed before 1991:",
-    sum(melanoma$diag.year<1991, na.rm=TRUE), "\n",
-    "Number of patients diagnosed after 2018:",
-    sum(melanoma$diag.year>2018, na.rm=TRUE), "\n",
-    "Number of patients with microsatellitosis:",
-    sum(melanoma$Microsatellitosis=="Yes"), "\n",
-    "Number of patients with intra lymphatic metastasis:",
-    sum(melanoma$Intra_lymphatic_metastasis=="Yes"), "\n",
-    "Number of patients with N-stage N1b:",
-    sum(melanoma$n_staging=="N1b"), "\n",
-    "Number of patients with N-stage N2b:",
-    sum(melanoma$n_staging=="N2b"), "\n",
-    "Number of patients with N-stage N2c:",
-    sum(melanoma$n_staging=="N2c"), "\n",
-    "Number of patients with N-stage N3b:",
-    sum(melanoma$n_staging=="N3b"), "\n",
-    "Number of patients with N-stage N3c:",
-    sum(melanoma$n_staging=="N3c"), "\n",
-    "Number of patients with M-stage M:",
-    sum(melanoma$m_staging=="M1")+
-      sum(melanoma$m_staging=="M1a")+
-      sum(melanoma$m_staging=="M1b"), "\n",
-    "Number of patients with unknown M-stage:",
-    sum(melanoma$m_staging=="Mx" | melanoma$m_staging=="6" | melanoma$m_staging=="7"), "\n")
+           m_staging=="M0") 
 incl.treat <- incl.disease %>%
   filter(neoadj!="Yes" &
+           Immuno_therapy!="Yes" &
+           Immuno_therapy_date=="" &
            Radiation_therapy!="Yes" &
            Radiation_therapy_date=="" &
            Chemo_therapy!="Yes" &
            Chemo_therapy_date=="" &
            Target_therapy!="Yes" &
-           Target_therapy_date=="" &
-           Immuno_therapy!="Yes" &
-           Immuno_therapy_date=="")
-cat("Number of patients with neo adjuvant therapyor immunotherapy:",
-    sum(incl.disease$Immuno_therapy=="Yes" | incl.disease$Immuno_therapy_date!="") +
-      sum(incl.disease$neoadj=="Yes"), "\n",
-    "Number of patients with radiation therapy:",
-    sum(incl.disease$Radiation_therapy=="Yes" | incl.disease$Radiation_therapy_date!=""), "\n",
-    "Number of patients with chemotherapy:",
-    sum(incl.disease$Chemo_therapy=="Yes" | incl.disease$Chemo_therapy_date!=""), "\n",
-    "Number of patients with targeted therapy:",
-    sum(incl.disease$Target_therapy=="Yes" | incl.disease$Target_therapy_date!=""), "\n")
+           Target_therapy_date=="")
 sel.val.dat <- incl.treat %>%
   filter(SNdate!="" &
            Last_FU!="" &
@@ -189,28 +154,57 @@ sel.val.dat <- incl.treat %>%
            diag_SN_wk>-14 &
            DOB!="" &
            Age > 0)
-cat(" Number of patients with unknown SN date and unknown last follow-up date:",
+cat(" Number of patients in original data set:", nrow(orig.val.dat), "\n",
+    "   Exclude number of patients with other cancer:",
+    sum(orig.val.dat$Other_cancer_yn=="Yes"), "\n",
+    "Number of patients after excluding other cancers:", nrow(melanoma), "\n",
+    "   Exclude number of patients diagnosed before 1991:",
+    sum(melanoma$diag.year<1991, na.rm=TRUE), "\n",
+    "   Exclude number of patients diagnosed after 2018:",
+    sum(melanoma$diag.year>2018, na.rm=TRUE), "\n",
+    "   Exclude number of patients with microsatellitosis, intra lymphatic metastasis, N-stage N1b, 2b, 2c, 3b, 3c:",
+    sum(melanoma$Microsatellitosis=="Yes")+ 
+    sum(melanoma$Intra_lymphatic_metastasis=="Yes")+ 
+    sum(melanoma$n_staging=="N1b")+ 
+    sum(melanoma$n_staging=="N2b")+ 
+    sum(melanoma$n_staging=="N2c")+ 
+    sum(melanoma$n_staging=="N3b")+ 
+    sum(melanoma$n_staging=="N3c"), "\n",
+    "   Exclude number of patients with M-stage M:",
+    sum(melanoma$m_staging=="M1")+
+      sum(melanoma$m_staging=="M1a")+
+      sum(melanoma$m_staging=="M1b"), "\n",
+    "   Exclude number of patients with unknown M-stage:",
+    sum(melanoma$m_staging=="Mx" | melanoma$m_staging=="6" | melanoma$m_staging=="7" | melanoma$m_staging==""), "\n",
+    "Number of patients after excluding other diseases:", nrow(incl.disease), "\n",
+    "   Exclude number of patients with neo adjuvant therapy or immunotherapy:",
+    sum(incl.disease$Immuno_therapy=="Yes" | incl.disease$Immuno_therapy_date!="") +
+      sum(incl.disease$neoadj=="Yes"), "\n",
+    "   Exclude number of patients with radiation therapy:",
+    sum(incl.disease$Radiation_therapy=="Yes" | incl.disease$Radiation_therapy_date!=""), "\n",
+    "   Exclude number of patients with chemotherapy:",
+    sum(incl.disease$Chemo_therapy=="Yes" | incl.disease$Chemo_therapy_date!=""), "\n",
+    "   Exclude number of patients with targeted therapy:",
+    sum(incl.disease$Target_therapy=="Yes" | incl.disease$Target_therapy_date!=""), "\n",
+    "Number of patients after excluding other treatments:", nrow(incl.treat), "\n",
+    "   Exclude number of patients with unknown SN date and unknown last follow-up date:",
     sum(incl.treat$SNdate=="")+
       sum(incl.treat$Last_FU==""), "\n",
-    "Number of patients with unknown Recurrence, COD and Status:",
+    "   Exclude number of patients with unknown Recurrence, COD and Status:",
     sum((incl.treat$Recurrence=="" & incl.treat$Cause_of_death=="" & incl.treat$Status=="") |
           (incl.treat$Recurrence=="" & incl.treat$Cause_of_death=="" & incl.treat$Status=="Lost to follow-up") |
           (incl.treat$Recurrence=="" & incl.treat$Cause_of_death=="Unknown" & incl.treat$Status=="") |
           (incl.treat$Recurrence=="" & incl.treat$Cause_of_death=="Unknown" & incl.treat$Status=="Lost to follow-up")), "\n",
-    "Number of patients with date of follow-up before or on the same day as SN date, \n unknown date of recurrence, date of recurrence before or on the same day as SN date:",
+    "   Exclude number of patients with date of follow-up before or on the same day as SN date, \n unknown date of recurrence, date of recurrence before or on the same day as SN date:",
     sum(incl.treat$FU.time<=0, na.rm=TRUE)+
       sum(incl.treat$Recurrence=="Yes" & incl.treat$Date_1st_Rec=="", na.rm=TRUE)+
       sum(incl.treat$Recurrence=="Yes" & incl.treat$Recurrence.time<=0, na.rm=TRUE), "\n",
-    "Number of patients with diagnose date 14 weeks before SN date:",
+    "   Exclude number of patients with diagnose date 14 weeks before SN date:",
     sum(incl.treat$diag_SN_wk<-14), "\n",
-    "Number of patients with SN date before DOB or at same date:",
+    "   Exclude number of patients with SN date before DOB or at same date:",
     sum(incl.treat$Age<=0, na.rm=TRUE), "\n",
-    "Number of patients with unknown DOB:",
-    sum(incl.treat$DOB==""), "\n")
-cat(" Number of patients in original data set:", nrow(orig.val.dat), "\n",
-    "Number of patients after excluding other cancers:", nrow(melanoma), "\n",
-    "Number of patients after excluding other diseases:", nrow(incl.disease), "\n",
-    "Number of patients after excluding other treatments:", nrow(incl.treat), "\n",
+    "   Exclude number of patients with unknown DOB:",
+    sum(incl.treat$DOB==""), "\n",
     "Number of patients after excluding registration issues:", nrow(sel.val.dat), "\n")
 
 # save sites sample size
